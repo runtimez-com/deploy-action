@@ -39,9 +39,23 @@ if [ -z "${SONAR_TOKEN:-}" ] || [ -z "${SONAR_PROJECT_KEY:-}" ]; then
   echo "[runtimez] sonar-token / sonar-project-key not provided — skipping SAST."
   exit 0
 fi
+# GitHub-hosted runners don't ship the sonar-scanner CLI — install it on demand.
+# Use the linux variant that BUNDLES its own JRE, so SAST works even for Node/Python/Go
+# projects where no JDK was set up by the detect step.
 if ! command -v sonar-scanner >/dev/null 2>&1; then
-  echo "[runtimez] WARN: sonar-scanner not installed — skipping SAST."
-  exit 0
+  SONAR_SCANNER_VERSION="${SONAR_SCANNER_VERSION:-5.0.1.3006}"
+  echo "[runtimez] sonar-scanner not found — installing v${SONAR_SCANNER_VERSION} (bundled JRE) ..."
+  _sdir="$(mktemp -d)"
+  _zip="${_sdir}/sonar-scanner.zip"
+  if curl -fsSL "https://binaries.sonarsource.com/Distribution/sonar-scanner-cli/sonar-scanner-cli-${SONAR_SCANNER_VERSION}-linux.zip" -o "$_zip" \
+     && unzip -q "$_zip" -d "$_sdir"; then
+    export PATH="${_sdir}/sonar-scanner-${SONAR_SCANNER_VERSION}-linux/bin:${PATH}"
+  fi
+  if ! command -v sonar-scanner >/dev/null 2>&1; then
+    echo "[runtimez] WARN: sonar-scanner install failed — skipping SAST."
+    exit 0
+  fi
+  sonar-scanner --version 2>/dev/null | head -3 || true
 fi
 
 # Ensure project exists (idempotent — 400 on duplicate is normal).
