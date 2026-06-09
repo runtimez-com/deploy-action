@@ -1,0 +1,17 @@
+# Scanner / build scratch
+.scannerwork/
+**/target/
+**/build/
+node_modules/
+coverage/
+cover.out
+*.xml.bak
+
+# Local scratch the action writes at runtime
+runtimez-deploy-action/
+
+# OS / editor
+.DS_Store
+*.swp
+.idea/
+.vscode/

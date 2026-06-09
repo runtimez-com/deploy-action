@@ -1,0 +1,139 @@
+name: "runtimez Deploy Action"
+description: >-
+  Build a customer app (buildpacks or Dockerfile), run tests + SCA (Trivy) +
+  SAST (SonarQube), push to the customer registry, and report everything to the
+  runtimez control plane.
+author: "runtimez"
+branding:
+  icon: "upload-cloud"
+  color: "blue"
+
+inputs:
+  runtimez-url:
+    description: "Base URL of the runtimez control plane (e.g. https://app.runtimez.io)"
+    required: true
+  token:
+    description: "runtimez CI token (rci_ prefixed). Pass from secrets.RUNTIMEZ_CI_TOKEN."
+    required: true
+  registry-host:
+    description: "Container registry host (e.g. ghcr.io, 123456789012.dkr.ecr.us-east-1.amazonaws.com)"
+    required: true
+  image-repo:
+    description: "Image repository path within the registry (e.g. acme/web)"
+    required: true
+  registry-username:
+    description: "Username for `docker login` to the customer registry"
+    required: true
+  registry-password:
+    description: "Password/token for `docker login` to the customer registry"
+    required: true
+  dockerfile-path:
+    description: "Path to a Dockerfile. Empty string => use Cloud Native Buildpacks (pack)."
+    required: false
+    default: ""
+  buildpack-builder:
+    description: "Buildpacks builder image used when no Dockerfile is provided."
+    required: false
+    default: "paketobuildpacks/builder-jammy-base"
+  test-command:
+    description: "Optional override for the test command. Empty => auto-detect from project files."
+    required: false
+    default: ""
+  sonar-host:
+    description: "SonarQube host URL for SAST analysis."
+    required: false
+    default: "https://sonar.runtimez.io"
+  sonar-token:
+    description: "SonarQube token. Empty => skip SAST."
+    required: false
+    default: ""
+  sonar-project-key:
+    description: "SonarQube project key. Empty => skip SAST."
+    required: false
+    default: ""
+
+outputs:
+  run-id:
+    description: "The runtimez run id created in the report-start step."
+    value: ${{ steps.report-start.outputs.runId }}
+  image-ref:
+    description: "Full image reference that was built and pushed."
+    value: ${{ steps.build.outputs.imageRef }}
+  image-tag:
+    description: "Image tag (the short git sha)."
+    value: ${{ steps.build.outputs.imageTag }}
+
+runs:
+  using: "composite"
+  steps:
+    - name: Report start
+      id: report-start
+      shell: bash
+      env:
+        RUNTIMEZ_URL: ${{ inputs.runtimez-url }}
+        RUNTIMEZ_TOKEN: ${{ inputs.token }}
+      run: ${{ github.action_path }}/scripts/report-start.sh
+
+    - name: Build image
+      id: build
+      shell: bash
+      env:
+        REGISTRY_HOST: ${{ inputs.registry-host }}
+        IMAGE_REPO: ${{ inputs.image-repo }}
+        DOCKERFILE_PATH: ${{ inputs.dockerfile-path }}
+        BUILDPACK_BUILDER: ${{ inputs.buildpack-builder }}
+      run: ${{ github.action_path }}/scripts/build.sh
+
+    - name: Run tests
+      id: test
+      shell: bash
+      env:
+        TEST_COMMAND: ${{ inputs.test-command }}
+      run: ${{ github.action_path }}/scripts/test.sh
+
+    - name: Security scans (SCA + SAST)
+      id: scan
+      shell: bash
+      env:
+        IMAGE_REF: ${{ steps.build.outputs.imageRef }}
+        SONAR_HOST_URL: ${{ inputs.sonar-host }}
+        SONAR_TOKEN: ${{ inputs.sonar-token }}
+        SONAR_PROJECT_KEY: ${{ inputs.sonar-project-key }}
+      run: ${{ github.action_path }}/scripts/scan.sh
+
+    - name: Parse results
+      id: parse
+      shell: bash
+      run: ${{ github.action_path }}/scripts/parse-results.sh
+
+    - name: Push image
+      id: push
+      shell: bash
+      env:
+        REGISTRY_HOST: ${{ inputs.registry-host }}
+        REGISTRY_USERNAME: ${{ inputs.registry-username }}
+        REGISTRY_PASSWORD: ${{ inputs.registry-password }}
+        IMAGE_REF: ${{ steps.build.outputs.imageRef }}
+      run: ${{ github.action_path }}/scripts/push.sh
+
+    - name: Report results
+      id: report-results
+      shell: bash
+      env:
+        RUNTIMEZ_URL: ${{ inputs.runtimez-url }}
+        RUNTIMEZ_TOKEN: ${{ inputs.token }}
+        RUN_ID: ${{ steps.report-start.outputs.runId }}
+        SONAR_HOST_URL: ${{ inputs.sonar-host }}
+        SONAR_PROJECT_KEY: ${{ inputs.sonar-project-key }}
+      run: ${{ github.action_path }}/scripts/report-results.sh
+
+    - name: Report deploy intent
+      id: report-deploy-intent
+      shell: bash
+      env:
+        RUNTIMEZ_URL: ${{ inputs.runtimez-url }}
+        RUNTIMEZ_TOKEN: ${{ inputs.token }}
+        RUN_ID: ${{ steps.report-start.outputs.runId }}
+        IMAGE_REF: ${{ steps.build.outputs.imageRef }}
+        IMAGE_TAG: ${{ steps.build.outputs.imageTag }}
+      run: ${{ github.action_path }}/scripts/report-deploy-intent.sh
