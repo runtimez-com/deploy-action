@@ -25,6 +25,21 @@ if [ -n "$DOCKERFILE" ]; then
   docker buildx build -f "$DOCKERFILE" -t "$IMAGE_REF" --load .
 else
   echo "[runtimez] No Dockerfile — building with buildpacks (builder=${BUILDPACK_BUILDER}) -> ${IMAGE_REF}"
+  # GitHub-hosted runners don't ship the pack CLI — install it on demand.
+  if ! command -v pack >/dev/null 2>&1; then
+    PACK_VERSION="${PACK_VERSION:-0.35.1}"
+    echo "[runtimez] pack CLI not found — installing v${PACK_VERSION} ..."
+    _tmp="$(mktemp -d)"
+    curl -fsSL "https://github.com/buildpacks/pack/releases/download/v${PACK_VERSION}/pack-v${PACK_VERSION}-linux.tgz" -o "${_tmp}/pack.tgz"
+    tar -xzf "${_tmp}/pack.tgz" -C "${_tmp}" pack
+    if sudo -n mv "${_tmp}/pack" /usr/local/bin/pack 2>/dev/null; then
+      :
+    else
+      mkdir -p "${HOME}/.local/bin" && mv "${_tmp}/pack" "${HOME}/.local/bin/pack" && export PATH="${HOME}/.local/bin:${PATH}"
+    fi
+    rm -rf "${_tmp}"
+    pack version
+  fi
   pack build "$IMAGE_REF" --builder "${BUILDPACK_BUILDER}"
 fi
 
