@@ -40,7 +40,18 @@ else
     rm -rf "${_tmp}"
     pack version
   fi
-  pack build "$IMAGE_REF" --builder "${BUILDPACK_BUILDER}"
+  # Pass the detected runtime version to the Paketo buildpack so it installs the
+  # matching language runtime inside the build (set in $GITHUB_ENV by
+  # detect-runtime.sh). Fixes "release version N not supported" errors.
+  BP_ENV_ARGS=()
+  for _bp in BP_JVM_VERSION BP_NODE_VERSION BP_CPYTHON_VERSION BP_GO_VERSION; do
+    _val="${!_bp:-}"
+    if [ -n "$_val" ]; then
+      echo "[runtimez] buildpack env: ${_bp}=${_val}"
+      BP_ENV_ARGS+=(--env "${_bp}=${_val}")
+    fi
+  done
+  pack build "$IMAGE_REF" --builder "${BUILDPACK_BUILDER}" ${BP_ENV_ARGS[@]+"${BP_ENV_ARGS[@]}"}
 fi
 
 echo "[runtimez] Built ${IMAGE_REF}"

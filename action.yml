@@ -74,6 +74,36 @@ runs:
         RUNTIMEZ_TOKEN: ${{ inputs.token }}
       run: ${{ github.action_path }}/scripts/report-start.sh
 
+    - name: Detect language + runtime
+      id: detect
+      shell: bash
+      run: ${{ github.action_path }}/scripts/detect-runtime.sh
+
+    - name: Set up Java
+      if: steps.detect.outputs.lang == 'java'
+      uses: actions/setup-java@v4
+      with:
+        distribution: temurin
+        java-version: ${{ steps.detect.outputs.java_version }}
+
+    - name: Set up Node
+      if: steps.detect.outputs.lang == 'node'
+      uses: actions/setup-node@v4
+      with:
+        node-version: ${{ steps.detect.outputs.node_version }}
+
+    - name: Set up Python
+      if: steps.detect.outputs.lang == 'python'
+      uses: actions/setup-python@v5
+      with:
+        python-version: ${{ steps.detect.outputs.python_version }}
+
+    - name: Set up Go
+      if: steps.detect.outputs.lang == 'go'
+      uses: actions/setup-go@v5
+      with:
+        go-version: ${{ steps.detect.outputs.go_version }}
+
     - name: Build image
       id: build
       shell: bash
